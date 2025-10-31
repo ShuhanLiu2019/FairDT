@@ -1,5 +1,6 @@
 import torch as th
 import torch.nn as nn
+import torch_geometric
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from torch_geometric.nn import MessagePassing, GCNConv
 from torch_geometric.utils import get_laplacian
@@ -10,6 +11,7 @@ import numpy as np
 from torch.nn import Parameter, Linear
 from ChebnetII_pro import ChebnetII_prop
 import pywt
+
 
 
 class LogReg(nn.Module):
@@ -78,11 +80,6 @@ def compute_laplacian(edge_index, num_nodes):
     return edge_index, edge_weight  
 
 
-import torch
-import torch.nn as nn
-import torch_geometric
-from torch_geometric.nn import GCNConv
-import pywt
 
 class WaveletTransform(nn.Module):
     def __init__(self, in_dim, out_dim, wavelet='sym4', level=4, threshold_value=10):
@@ -223,19 +220,8 @@ class Model(nn.Module):
         self.disc3 = Discriminator2(out_dim)
 
         self.act_fn = nn.ReLU()
-        self.alpha = nn.Parameter(torch.tensor(0.5), requires_grad=True)
-        self.beta = nn.Parameter(torch.tensor(0.5), requires_grad=True)
 
-    def get_embedding(self, edge_index, feat,n_node):
-        h1 = self.encoder(x=feat, edge_index=edge_index, highpass=True)  #high-pass
-        h2 = self.encoder(x=feat, edge_index=edge_index, highpass=False)    #low-pass
-
-        h2_ll,h2_lh=self.wave_layer1(h2)
-        h1_hl,h1_hh=self.wave_layer1(h1) 
-
-        h = torch.mul(self.alpha, h2_lh) + torch.mul(self.beta, h1_hh)
-
-        return h.detach()
+        self.weight_params = nn.Parameter(torch.tensor([0.5, 0.5]))  
 
     def forward(self, edge_index, feat, feat_s0, feat_s1, edge_index_s0, edge_index_s1, shuf_feat,n_node):
         # positive
@@ -248,7 +234,9 @@ class Model(nn.Module):
         h2_mean = self.act_fn(torch.mean(h2, dim=0))
         h1_mean = self.act_fn(torch.mean(h1, dim=0))
 
-        h = torch.mul(self.alpha, h2_lh) + torch.mul(self.beta, h1_hh)
+        alpha, beta = self.get_alpha_beta()
+        h = alpha * h2_lh + beta * h1_hh
+
         c = self.act_fn(torch.mean(h, dim=0))
 
         # negative
@@ -257,7 +245,6 @@ class Model(nn.Module):
 
         h4_ll,h4_lh=self.wave_layer1(h4)  #low-pass
         h3_ll,h3_lh=self.wave_layer2(h3)  #high-pass
-
 
         #GCL
         h2_s0=self.encoder(x=feat_s0, edge_index=edge_index_s0, highpass=False) #low-pass
@@ -279,6 +266,22 @@ class Model(nn.Module):
 
         return out1,out2,out3
 
+    def get_alpha_beta(self):
+        alpha, beta = torch.softmax(self.weight_params, dim=0)
+        return alpha, beta
+        
+    def get_embedding(self, edge_index, feat,n_node):
+        h1 = self.encoder(x=feat, edge_index=edge_index, highpass=True)  #high-pass
+        h2 = self.encoder(x=feat, edge_index=edge_index, highpass=False)    #low-pass
+
+        h2_ll,h2_lh=self.wave_layer1(h2)
+        h1_hl,h1_hh=self.wave_layer1(h1) 
+
+        alpha, beta = self.get_alpha_beta()
+        h = alpha * h2_lh + beta * h1_hh
+
+        return h.detach()
+        
     def get_predictive(self, edge_index, feat,n_node):
         h2 = self.encoder(x=feat, edge_index=edge_index, highpass=False)    #low-pass
 

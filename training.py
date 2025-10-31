@@ -132,119 +132,50 @@ def feature_norm(features):
     return 2*(features - min_values).div(max_values-min_values) - 1
 
 
-printcnt = 0
-
-def fair_metric(val_labels,sens_test,sens2_test,val_preds):
-    global printcnt
-    printcnt += 1;
-    PrintcntSH = 1000
-
+def fair_metric(val_labels,sens_test,val_preds): 
     val_y=val_labels.cpu().numpy()
+    
+    idx_s0 = sens_test==0
+    idx_s1 = sens_test==1
 
-    # list 4 sub-sensitive group sa&sb
-    idxs_subsens = [];
-    for sa in range(0,2):
-        for sb in range(0,2):
-            idxs_subsens.append((sens_test == sa) & (sens2_test == sb))
+    idx_s0_y1 = (idx_s0 & (val_y == 1)).to(torch.bool)
+    idx_s1_y1 = (idx_s1 & (val_y == 1)).to(torch.bool)
 
-    # sa&sb & y = 1
-    idxs_subsens_y1 = [(idx_ssub & (val_y == 1)).to(torch.bool) for idx_ssub in idxs_subsens]
-
-    # y^ = 1
     pred_y = (val_preds.squeeze() > 0).type_as(val_labels).cpu().numpy()
-
-    # pre calculate
-    sumss = [sum(idx_ssub) for idx_ssub in idxs_subsens]
-    sumss_py1 = [sum(pred_y[idx_ssub]) for idx_ssub in idxs_subsens]
-    sumss_y1 = [sum(idx_sysub) for idx_sysub in idxs_subsens_y1]
-    sumss_y1_py1 = [sum(pred_y[idx_sysub]) for idx_sysub in idxs_subsens_y1]
-
-    # calculate SP
-    SP_subs = [(1 if sumss[x] == 0 else sumss_py1[x]/sumss[x]) for x in range(0,4)]
-    SPd = max(SP_subs) - min(SP_subs)
-    SPv = np.std(SP_subs)
-    if (printcnt % PrintcntSH == 0):
-        print("\tSP", SP_subs)
-        for x in range(0,4):
-            print("\tSP sub-sens:",sumss_py1[x],":",sumss[x])
-
-    # calculate EO
-    EO_subs = [(1 if sumss_y1[x] == 0 else sumss_y1_py1[x]/sumss_y1[x]) for x in range(0,4)]
-    EOd = max(EO_subs) - min(EO_subs)
-    EOv = np.std(EO_subs)
-    if (printcnt % PrintcntSH == 0):
-        print("\tEO", EO_subs)
-        for x in range(0,4):
-            print("\tEO sub-sens:",sumss_y1_py1[x],":",sumss_y1[x])
-
-    # calculate UC
-    UC_subs = [(1 if sumss_py1[x] == 0 else sumss_y1_py1[x]/sumss_py1[x]) for x in range(0,4)]
-    UCd = max(UC_subs) - min(UC_subs)
-    UCv = np.std(UC_subs)
-    if (printcnt % PrintcntSH == 0):
-        print("\tUC", UC_subs)
-        for x in range(0,4):
-            print("\tUC sub-sens:",sumss_y1_py1[x],":",sumss_py1[x])
-
-    # old : sp = abs(sum(pred_y[idx1_s0])/sum(idx1_s0)-sum(pred_y[idx1_s1])/sum(idx1_s1))
-    # old : eo = abs(sum(pred_y[idx1_s0_y1])/sum(idx1s0_y1)-sum(pred_y[idx1_s1_y1])/sum(idx_s1_y1))
-
-    # return SP_subs, EO_subs, UC_subs
-    return SPd, SPv, EOd, EOv, UCd, UCv
+    
+    parity = abs(sum(pred_y[idx_s0])/sum(idx_s0)-sum(pred_y[idx_s1])/sum(idx_s1))   
+    equality = abs(sum(pred_y[idx_s0_y1])/sum(idx_s0_y1)-sum(pred_y[idx_s1_y1])/sum(idx_s1_y1))    
+    return parity,equality
 
 
 
-def fair_loss(train_labels,sens_train,sens2_train,logits):
+def fair_loss(train_labels,sens_train,logits):
     train_y=train_labels
     
-    idx_s0s0 = (sens_train==0) & (sens2_train==0)
-    idx_s1s0 = (sens_train==1) & (sens2_train==0)
-    idx_s0s1 = (sens_train==0) & (sens2_train==1)
-    idx_s1s1 = (sens_train==1) & (sens2_train==1)
+    idx_s0 = sens_train==0
+    idx_s1 = sens_train==1
 
-    idx_s0s0_y1 = (idx_s0s0 & (train_y == 1)).to(torch.bool)
-    idx_s0s1_y1 = (idx_s0s1 & (train_y == 1)).to(torch.bool)
-    idx_s1s0_y1 = (idx_s1s0 & (train_y == 1)).to(torch.bool)
-    idx_s1s1_y1 = (idx_s1s1 & (train_y == 1)).to(torch.bool)
+    idx_s0_y1 = (idx_s0 & (train_y == 1)).to(torch.bool)
+    idx_s1_y1 = (idx_s1 & (train_y == 1)).to(torch.bool)
 
+    sp0 = torch.mean(logits[idx_s0])
+    sp1 = torch.mean(logits[idx_s1])
+    eo0 = torch.mean(logits[idx_s0_y1])
+    eo1 = torch.mean(logits[idx_s1_y1])
 
-    sp00 = torch.mean(logits[idx_s0s0])
-    sp10 = torch.mean(logits[idx_s1s0])
-    sp01 = torch.mean(logits[idx_s0s1])
-    sp11 = torch.mean(logits[idx_s1s1])
-    sp_max = torch.max(torch.stack([sp00, sp10, sp01, sp11]))
-    sp_min = torch.min(torch.stack([sp00, sp10, sp01, sp11]))
-
-    eo00 = torch.mean(logits[idx_s0s0_y1])
-    eo10 = torch.mean(logits[idx_s0s1_y1])
-    eo01 = torch.mean(logits[idx_s1s0_y1])
-    eo11 = torch.mean(logits[idx_s1s1_y1])
-    eo_max = torch.max(torch.stack([eo00, eo10, eo01, eo11]))
-    eo_min = torch.min(torch.stack([eo00, eo10, eo01, eo11]))
-
-
-    uc00 = eo00 / sp00 / sum(idx_s0s0) * (idx_s0s0_y1)
-    uc10 = eo10 / sp10 / sum(idx_s1s0) * (idx_s1s0_y1)
-    uc01 = eo01 / sp01 / sum(idx_s0s1) * (idx_s0s1_y1)
-    uc11 = eo11 / sp11 / sum(idx_s1s1) * (idx_s1s1_y1)
-    uc_max = torch.max(torch.stack([uc00, uc10, uc01, uc11]))
-    uc_min = torch.min(torch.stack([uc00, uc10, uc01, uc11]))
-
-    return sp_max,sp_min,eo_max,eo_min,uc_max,uc_min
+    return sp0,sp1,eo0,eo1
 
 
 
-def split(label_idx,feat,label,edge_index,seed,label_number,test_idx):
+def split(label_idx,feat,label,edge_index,seed,label_number,test_idx=False):
     idx_train = label_idx[:min(int(0.5 * len(label_idx)),label_number)]
-    print('Length of training set',len(idx_train))
-
-    if test_idx==True:
+    idx_val = label_idx[int(0.5 * len(label_idx)):int(0.75 * len(label_idx))]
+    if test_idx:
         idx_test = label_idx[label_number:]
         idx_val = idx_test
     else:
-        idx_test = label_idx[int(0.75 * len(label_idx)):] 
-
-
+        idx_test = label_idx[int(0.75 * len(label_idx)):]
+    
     idx_train = torch.tensor(idx_train, dtype=torch.long)
     idx_test = torch.tensor(idx_test, dtype=torch.long)
 
@@ -295,7 +226,7 @@ if __name__ == "__main__":
     label = data.y
     label[label > 1] = 1
     edge_index = data.edge_index.long()
-    sens,sens2=dataset.sens()
+    sens=dataset.sens()
 
     a=args.a
     b=args.b
@@ -324,12 +255,9 @@ if __name__ == "__main__":
     
     label_train=label[idx_train]
     label_test=label[idx_test]
-    #print('label_train:',label_train)
     
     sens_train=sens[idx_train]
-    sens2_train=sens2[idx_train]
     sens_test=sens[idx_test]
-    sens2_test=sens2[idx_test]
 
     idx_s0, idx_s1, edge_index_s0, edge_index_s1=add_s_train(idx_train,sens_train,edge_index)
 
@@ -344,7 +272,6 @@ if __name__ == "__main__":
     edge_index_train = edge_index_train.to(args.device)
     feat_train = feat_train.to(args.device)
     sens_train = sens_train.to(args.device)
-    sens2_train = sens2_train.to(args.device)
     label_train = label_train.to(args.device)
     feat_train_s0 = feat_train_s0.to(args.device)
     feat_train_s1 = feat_train_s1.to(args.device)
@@ -357,8 +284,6 @@ if __name__ == "__main__":
 
     n_node = feat_train.shape[0]
     n_node_test = feat_test.shape[0]
-    print('Number of training n_node：',n_node)
-    print('Number of test n_node：',n_node_test)
 
     s0_node=feat_train_s0.shape[0]
     s1_node= feat_train_s1.shape[0]
@@ -402,7 +327,6 @@ if __name__ == "__main__":
                                 {'params': model.weight_params, 'weight_decay': args.wd, 'lr': args.lr}
                                 ])
 
-    
     loss_p = nn.BCEWithLogitsLoss()
     loss_h = nn.BCEWithLogitsLoss()
 
@@ -410,7 +334,6 @@ if __name__ == "__main__":
     #loss_cs = nn.BCEWithLogitsLoss()
     loss_sp=nn.MSELoss()
     loss_eo=nn.MSELoss()
-    loss_uc = nn.MSELoss()
 
     # Step 4: Training epochs ================================================================ #
     best = float("inf")
@@ -448,13 +371,12 @@ if __name__ == "__main__":
             logits = logreg(train_embeds)      
             preds = th.argmax(logits, dim=1)     
 
-            sp_max,sp_min,eo_max,eo_min,uc_max,uc_min = fair_loss(label_train,sens_train,sens2_train,logits)
+            sp0,sp1,eo0,eo1 = fair_loss(label_train,sens_train,logits)
             
             train_acc = th.sum(preds == label_train).float() / label_train.shape[0]        
 
-            loss_f=loss_h(out2, lbls)+ loss_h(out3, lbls) + loss_sp(sp_max,sp_min) + loss_eo(eo_max,eo_min)+loss_uc(uc_max,uc_min)
+            loss_f=loss_h(out2, lbls)+ loss_h(out3, lbls) + loss_sp(sp0, sp1) + loss_eo(eo0, eo1)
 
-        
             loss =  a*loss_f + b*loss_p(out1, lbl) 
 
             loss.backward()    
@@ -464,16 +386,13 @@ if __name__ == "__main__":
             model.eval()    
 
             if epoch % 20 == 0:
-                print("Epoch: {0}, All Loss: {1:0.4f}, FN1 Loss: {2:0.4f}, FN2 Loss: {3:0.4f}, SP Loss: {4:0.4f}, EO Loss: {5:0.4f},UC Loss: {6:0.4f}.".format(epoch, loss.item(),loss_p(out1, lbl),loss_h(out2, lbls), loss_sp(sp_max,sp_min), loss_eo(eo_max,eo_min),loss_uc(uc_max,uc_min)))
+                print("Epoch: {0}, All Loss: {1:0.4f}, FN1 Loss: {2:0.4f}, FN2 Loss: {3:0.4f}, SP Loss: {4:0.4f}, EO Loss: {5:0.4f},".format(epoch, loss.item(),loss_p(out1, lbl),loss_h(out2, lbls), loss_sp(sp0, sp1), loss_eo(eo0, eo1)))
 
             bar()
 
     model.eval() 
     train_embeds=model.get_embedding(edge_index_train, feat_train, n_node)
 
-    #print(edge_index_train)
-    #print(edge_index_test)
-    
 
     test_embs = model.get_embedding(edge_index_test,  feat_test, n_node_test)
 
@@ -488,27 +407,9 @@ if __name__ == "__main__":
     print("Unique test labels:", torch.unique(label_test))
     print("Label min/max:", label_test.min(), label_test.max())
 
-    def recode_an_dprint_result(best_ars_result, result_type, acc_test, f1_test, SPd, SPv, EOd, EOv, UCd, UCv):
-        best__result = {}
-        best__result['acc'] = acc_test.item()
-        best__result['f1'] = f1_test
-        best__result['SPd'] = SPd
-        best__result['SPvar'] = SPv
-        best__result['EOd'] = EOd
-        best__result['EOvar'] = EOv
-        best__result['UCd'] = UCd
-        best__result['UCvar'] = UCv
-        best_ars_result[f'{result_type}_result'] = best__result
-        print(f"Test {result_type}:",
-              "accuracy: {:.4f}".format(acc_test.item()),
-              "f1: {:.4f}".format(f1_test),
-              "SPd: {:.4f}".format(SPd),"SPvar: {:.4f}".format(SPv),"EOd: {:.4f}".format(EOd),"EOvar: {:.4f}".format(EOv),"UCd: {:.4f}".format(UCd),"UCvar: {:.4f}".format(UCv))
-        return best__result
 
 
-    # Update_Threshold = 0.00005
     for epoch in range(1000):
-        print(f"\r{str(epoch).zfill(4)}/1000", end = ": ", flush=True)
         logreg2.train()
         opt.zero_grad()
         logits = logreg2(train_embeds)    
@@ -520,7 +421,7 @@ if __name__ == "__main__":
 
         logreg2.eval()  
 
-        with th.no_grad():
+        with th.no_grad():  
             test_logits = logreg2(test_embs)     
             test_preds = th.argmax(test_logits, dim=1)
             acc_test = th.sum(test_preds == label_test).float() / label_test.shape[0]
@@ -531,80 +432,83 @@ if __name__ == "__main__":
 
             precision, recall, f1_test, _ = precision_recall_fscore_support(label_test.cpu(), test_preds.cpu(), average='binary')
             
-            SPd,SPv,EOd,EOv,UCd,UCv = fair_metric(label_test,sens_test,sens2_test,test_preds)
+            parity,equality = fair_metric(label_test,sens_test,test_preds)
 
         if best_acc <= acc_test:
             best_acc = acc_test
-            best_acc_result = recode_an_dprint_result(best_ars_result, "best_acc", acc_test, f1_test, SPd,SPv,EOd,EOv,UCd,UCv)
-            # best_acc_result = {}
-            # best_acc_result['acc'] = acc_test.item()
-            # best_acc_result['parity'] = parity
-            # best_acc_result['equality'] = equality
-            # best_ars_result['best_acc_result'] = best_acc_result
-            # print("Test best_acc:",
-            #         "accuracy: {:.4f}".format(acc_test.item()),
-            #         "f1: {:.4f}".format(f1_test),
-            #         "parity: {:.4f}".format(parity),
-            #         "equality: {:.4f}".format(equality))
+            best_acc_result = {}
+            best_acc_result['acc'] = acc_test.item()
+            best_acc_result['parity'] = parity
+            best_acc_result['equality'] = equality
+            best_ars_result['best_acc_result'] = best_acc_result
+            print("Test best_acc:",
+                    "accuracy: {:.4f}".format(acc_test.item()),
+                    "f1: {:.4f}".format(f1_test),
+                    "parity: {:.4f}".format(parity),
+                    "equality: {:.4f}".format(equality))
             
         if best_f1 <= f1_test:
             best_f1 = f1_test
-            best_f1_result = recode_an_dprint_result(best_ars_result, "best_f1", acc_test, f1_test, SPd,SPv,EOd,EOv,UCd,UCv)
-            # best_f1_result = {}
-            # best_f1_result['acc'] = acc_test.item()
-            # best_f1_result['f1'] = f1_test
-            # best_f1_result['parity'] = parity
-            # best_f1_result['equality'] = equality
-            # best_ars_result['best_f1_result'] = best_f1_result
-            # print("Test best_f1:",
-            #         "accuracy: {:.4f}".format(acc_test.item()),
-            #         "f1: {:.4f}".format(f1_test),
-            #         "parity: {:.4f}".format(parity),
-            #         "equality: {:.4f}".format(equality))
+            best_f1_result = {}
+            best_f1_result['acc'] = acc_test.item()
+            best_f1_result['f1'] = f1_test
+            best_f1_result['parity'] = parity
+            best_f1_result['equality'] = equality
+            best_ars_result['best_f1_result'] = best_f1_result
+            print("Test best_f1:",
+                    "accuracy: {:.4f}".format(acc_test.item()),
+                    "f1: {:.4f}".format(f1_test),
+                    "parity: {:.4f}".format(parity),
+                    "equality: {:.4f}".format(equality))
 
         
         if best_ar <= f1_test + acc_test:
             best_ar = f1_test + acc_test
-            best_ar_result = recode_an_dprint_result(best_ars_result, "best_ar", acc_test, f1_test, SPd,SPv,EOd,EOv,UCd,UCv)
-            # best_ar_result = {}
-            # best_ar_result['acc'] = acc_test.item()
-            # best_ar_result['f1'] = f1_test
-            # best_ar_result['parity'] = parity
-            # best_ar_result['equality'] = equality
-            # best_ars_result['best_ar_result'] = best_ar_result
-            # print("Test best_ar:",
-            #         "accuracy: {:.4f}".format(acc_test.item()),
-            #         "f1: {:.4f}".format(f1_test),
-            #         "parity: {:.4f}".format(parity),
-            #         "equality: {:.4f}".format(equality))
+            best_ar_result = {}
+            best_ar_result['acc'] = acc_test.item()
+            best_ar_result['f1'] = f1_test
+            best_ar_result['parity'] = parity
+            best_ar_result['equality'] = equality
+            best_ars_result['best_ar_result'] = best_ar_result
+            print("Test best_ar:",
+                    "accuracy: {:.4f}".format(acc_test.item()),
+                    "f1: {:.4f}".format(f1_test),
+                    "parity: {:.4f}".format(parity),
+                    "equality: {:.4f}".format(equality))
                     
         if acc_test > args.acc and f1_test > args.f1:
-            if best_fair > SPd + EOd + UCd:
-                best_fair = SPd + EOd + UCd
-                best_result = recode_an_dprint_result(best_ars_result, "best_fair", acc_test, f1_test, SPd,SPv,EOd,EOv,UCd,UCv)
-                # best_result['acc'] = acc_test.item()
-                # best_result['f1'] = f1_test
-                # best_result['parity'] = parity
-                # best_result['equality'] = equality 
-                # print("Test best_fair:",
-                #     "accuracy: {:.4f}".format(acc_test.item()),
-                #     "f1: {:.4f}".format(f1_test),
-                #     "parity: {:.4f}".format(parity),
-                #     "equality: {:.4f}".format(equality))
-
-        #print('Linear evaluation accuracy on train dataset:{:.4f}'.format(train_acc))
-        #print('Linear evaluation accuracy on test dataset:{:.4f}'.format(eval_acc))
-        #print('Linear evaluation fairmetric on validation dataset:{:.4f}，{:.4f}'.format(best_t_parity,best_t_equality))
+            if best_fair > parity + equality:
+                best_fair = parity + equality
+                best_result['acc'] = acc_test.item()
+                best_result['f1'] = f1_test
+                best_result['parity'] = parity
+                best_result['equality'] = equality 
+                print("Test best_fair:",
+                    "accuracy: {:.4f}".format(acc_test.item()),
+                    "f1: {:.4f}".format(f1_test),
+                    "parity: {:.4f}".format(parity),
+                    "equality: {:.4f}".format(equality))
 
     print('============fair classification on test set=============')
     print(best_ars_result)
 
     if len(best_result) > 0:
-        log = "Test: accuracy: {:.4f}, f1: {:.4f}, SPd: {:.4f}, SPvar: {:.4f}, EOd: {:.4f}, EOvar: {:.4f}, UCd: {:.4f}, UCvar: {:.4f}"\
-                .format(best_result['acc'],best_result['f1'], best_result['SPd'],best_result['SPvar'], best_result['EOd'],best_result['EOvar'], best_result['UCd'],best_result['UCvar'])
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_txt =   f"[{current_time}]: [{args.dataname}]: a:{a}, b:{b}, phi:{phi},"
+        log_txt +=  "accuracy:{:.4f}, f1:{:.4f}, parity:{:.4f}, equality:{:.4f}\n"\
+                    .format(best_result['acc'],best_result['f1'], best_result['parity'],best_result['equality'])
         with open('log.txt', 'a') as f:
-            f.write(log)
-        print(log)
+            f.write(log_txt)
+        log_csv =   f"[{current_time}], {args.dataname}, {a}, {b}, {phi},"
+        log_csv +=  "{:.4f}, {:.4f}, {:.4f}, {:.4f}\n"\
+                    .format(best_result['acc'],best_result['f1'], best_result['parity'],best_result['equality'])
+        with open('log.csv', 'a') as f:
+            f.write(log_csv)
+        print("Test:",
+            "accuracy: {:.4f}".format(best_result['acc']),
+            "f1: {:.4f}".format(best_result['f1']),
+            "parity: {:.4f}".format(best_result['parity']),
+            "equality: {:.4f}".format(best_result['equality']))
     else:
         print("Please set smaller acc/roc thresholds")
         
@@ -618,7 +522,6 @@ if __name__ == "__main__":
     eval_acc_d = 0
 
     logreg2 = LogReg(hid_dim=args.hid_dim, n_classes=n_classes)  
-    # = th.optim.Adam(logreg.parameters(), lr=args.lr2, weight_decay=args.wd2) 
     logreg2 = logreg2.to(args.device)
 
     optimizer_d = torch.optim.Adam([{'params': logreg2.parameters(), 'lr':args.lr4, 'weight_decay':args.wd4}])

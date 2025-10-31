@@ -105,19 +105,14 @@ class nba(InMemoryDataset):
             header = raw_data[0].split(',')
 
             country_index = header.index('country')
-            age_index= header.index('AGE')
             #print('country_index:',country_index)
 
-            sens1 = [int(r.split(',')[country_index]) for r in data if r]
-            #sens2 = [int(r.split(',')[age_index]) for r in data if r]
-            sens2 = [1 if int(r.split(',')[age_index]) > 35 else 0 for r in data if r]
+            sens = [int(r.split(',')[country_index]) for r in data if r]
 
             #sens = torch.tensor(sens, dtype=torch.float).unsqueeze(1)
-            sens1 = torch.tensor(sens1, dtype=torch.float)
-            sens2 = torch.tensor(sens2, dtype=torch.float)
-            print("country length",len(sens1))
-            print("age_length:",len(sens2))
-        return sens1,sens2
+            sens = torch.tensor(sens, dtype=torch.float)
+            print(len(sens))
+        return sens
 
     def get_idx(self,predict_attr,seed):
         idx_features_labels = pd.read_csv(self.raw_paths[0])
@@ -210,15 +205,9 @@ class pokec(InMemoryDataset):
             
             header = raw_data[0].split(',')
             region_index = header.index('region')
-            gender_index = header.index('gender')
-            
-            sens1 = [int(r.split(',')[region_index]) for r in data if r]
-            sens2 = [int(float(r.split(',')[gender_index])) for r in data if r]
-            
-            sens1 = torch.tensor(sens1, dtype=torch.float)
-            sens2 = torch.tensor(sens2, dtype=torch.float)
-            
-        return sens1,sens2
+            sens = [int(r.split(',')[region_index]) for r in data if r]
+            sens = torch.tensor(sens, dtype=torch.float)
+        return sens
 
     def get_idx(self,predict_attr,seed):
         idx_features_labels = pd.read_csv(self.raw_paths[0])
@@ -293,7 +282,7 @@ class german(InMemoryDataset):
             
             print("第7列的类型:", type(data[0][6]))
 
-            x = [[float(v) for v in r.split(',')[2:]] for r in data]
+            x = [[float(v) for v in r.split(',')[1:]] for r in data]
             x = torch.tensor(x, dtype=torch.float)
             print(x.size(0))
 
@@ -329,46 +318,31 @@ class german(InMemoryDataset):
             header = raw_data[0].split(',')
 
             gender_index = header.index('Gender')
-            age_index= header.index('Age')
-            
-            #print('gender_index:',gender_index)
-            #print('age_index:',age_index)
-            
-            #print("修改前gender的类型:", type(data[0][gender_index]))
-            unique_strings = list({row.split(',')[gender_index] for row in data})  # 使用集合去重
 
+
+
+            # (1) 提取第1列的所有唯一值，因为第1列是字符串
+            unique_strings = list({row.split(',')[1] for row in data})  # 使用集合去重
+
+            # (2) 创建映射字典：{"Apple": 0, "Banana": 1, ...}
             str_to_num = {s: i for i, s in enumerate(unique_strings)}
 
+            # (3) 替换第1列的字符串为数值编码
             for i in range(len(data)):
                 parts = data[i].split(',')  # 拆分当前行
-                parts[gender_index] = str(str_to_num[parts[gender_index]])  # 修改第7列
+                parts[1] = str(str_to_num[parts[1]])  # 修改第1列
                 data[i] = ','.join(parts)  # 重新拼接并替换原数据
-            #print("修改后gender的类型:", type(data[0][gender_index]))
-
-
-            #print("修改前第6列的类型:", type(data[0][6]))
-            unique_strings = list({row.split(',')[6] for row in data})  # 使用集合去重
-
-            str_to_num = {s: i for i, s in enumerate(unique_strings)}
-
-            for i in range(len(data)):
-                parts = data[i].split(',')  # 拆分当前行
-                parts[6] = str(str_to_num[parts[6]])  # 修改第7列
-                data[i] = ','.join(parts)  # 重新拼接并替换原数据
-
             
-            #print("第6列的类型:", type(data[0][6]))
-            #print(data)
+            
+            print("第1列的类型:", type(data[0][1]))
 
 
-            sens1 = [int(r.split(',')[gender_index]) for r in data if r]
-            sens2 = [1 if int(r.split(',')[age_index]) > 60 else 0 for r in data if r]
+            sens = [int(r.split(',')[gender_index]) for r in data if r]
 
             #sens = torch.tensor(sens, dtype=torch.float).unsqueeze(1)
-            sens1 = torch.tensor(sens1, dtype=torch.float)
-            sens2 = torch.tensor(sens2, dtype=torch.float)
-            #print(len(sens1),len(sens2))
-        return sens1,sens2
+            sens = torch.tensor(sens, dtype=torch.float)
+            print(len(sens))
+        return sens
 
     def get_idx(self,predict_attr,seed):
         idx_features_labels = pd.read_csv(self.raw_paths[0])
@@ -457,18 +431,15 @@ class bail(InMemoryDataset):
             header = raw_data[0].split(',')
 
             gender_index = header.index('WHITE')
-            male_index=header.index('MALE')
 
 
-            sens1 = [int(r.split(',')[gender_index]) for r in data if r]
-            sens2 = [int(r.split(',')[male_index]) for r in data if r]
+
+            sens = [int(r.split(',')[gender_index]) for r in data if r]
 
             #sens = torch.tensor(sens, dtype=torch.float).unsqueeze(1)
-            sens1 = torch.tensor(sens1, dtype=torch.float)
-            sens2 = torch.tensor(sens2, dtype=torch.float)
-            
-            #print(len(sens1),len(sens2))
-        return sens1,sens2
+            sens = torch.tensor(sens, dtype=torch.float)
+            print(len(sens))
+        return sens
 
     def get_idx(self,predict_attr,seed):
         idx_features_labels = pd.read_csv(self.raw_paths[0])
@@ -558,18 +529,15 @@ class credit(InMemoryDataset):
             header = raw_data[0].split(',')
 
             gender_index = header.index('Age')
-            edu_index = header.index('EducationLevel')
 
 
-            sens1 = [int(r.split(',')[gender_index]) for r in data if r]
-            sens2 = [int(r.split(',')[edu_index]) for r in data if r]
-            
+
+            sens = [int(r.split(',')[gender_index]) for r in data if r]
+
             #sens = torch.tensor(sens, dtype=torch.float).unsqueeze(1)
-            sens1 = torch.tensor(sens1, dtype=torch.float)
-            sens2 = torch.tensor(sens2, dtype=torch.float)
-            
-            #print(len(sens1),len(sens2))
-        return sens1,sens2
+            sens = torch.tensor(sens, dtype=torch.float)
+            print(len(sens))
+        return sens
 
     def get_idx(self,predict_attr,seed):
         idx_features_labels = pd.read_csv(self.raw_paths[0])

@@ -30,13 +30,19 @@ See 'requirements.txt' for more details.
 
 
 ## Datasets
-We provide the six public datasets we used in the folder 'data'. The original dataset is in the "raw" folder in each dataset folder. The processed dataset is in the "processed" folder in each dataset folder.
+We provide the six public datasets we used in the folder "data".   
+The original dataset is in the "raw" folder in each dataset folder.   
+The processed dataset is in the "processed" folder in each dataset folder.   
 
 
 ## Reproduce the results
 Run the following commands directly.
 
 `sh exp_Fair.sh`
+
+For additional fairness metrics (Equalized Odds and Predictive Equality), please run the following commands.
+
+`sh exp_Fair_addmetric.sh`
 
 
 ## Contact
